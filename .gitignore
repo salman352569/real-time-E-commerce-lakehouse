@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+
+logs/
+*.log
+
+data/
+
+metadata/
+
+.ipynb_checkpoints
+
+.env
+.env.*
+
+spark-warehouse/

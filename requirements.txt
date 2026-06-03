@@ -1,0 +1,5 @@
+pyspark
+pandas
+pyyaml
+faker 
+delta-spark
