@@ -1,6 +1,6 @@
 from spark.utils.spark_session import create_spark_session
 from pyspark.sql.window import Window
-from pyspark.sql.functions import col
+from pyspark.sql.functions import col,current_timestamp,when ,lit
 from pyspark.sql.functions import row_number
 from spark.utils.watermark import get_watermark
 from pyspark.sql.functions import max as spark_max
@@ -16,13 +16,14 @@ spark = create_spark_session(
 df =spark.read.parquet(
     "data/bronze/orders")
 
+df= df.withColumn(
+    "arrival_timestamp",
+    current_timestamp()
+)
+
 # Read last processed timestamp
 last_watermark = get_watermark()
 
-# Incremental load 
-incremental_df = df.filter(
-    col("order_purchase_timestamp") > last_watermark
-)
 
 window_spec = Window.partitionBy(
         "order_id"
@@ -30,31 +31,66 @@ window_spec = Window.partitionBy(
         col("ingestion_timestamp").desc()
     )
 
-dedup_df = incremental_df.withColumn(
+dedup_df = df.withColumn(
         "row_num",
         row_number().over(window_spec)
     ).filter(
         col("row_num") == 1
     ).drop("row_num")
-new_watermark = (
-    dedup_df
-    .agg(
-        spark_max(
-            "order_purchase_timestamp"
-        )
-    )
-    .collect()[0][0]
+
+# Detect Late Data 
+
+dedup_df=dedup_df.withColumn(
+    "is_late",
+    when(
+        col("order_purchase_timestamp") < lit(last_watermark),
+        True
+    ).otherwise(False)
 )
+#Split Late order data and normal order data 
+late_order_df=dedup_df.filter(col("is_late") == True)
+
+normal_order_df =dedup_df.filter(col("is_late") == False)
+total_count = dedup_df.count()
+late_count = late_order_df.count()
+normal_count = normal_order_df.count()
+print(total_count)
+print(late_count)
+print(normal_count)
+
+
+# Now writing late orders separately 
+late_order_df.write.mode("overwrite").parquet("data/silver/late_orders")
+
+#Now applying incremental logic to norrmal data 
+incremental_df= normal_order_df.filter(
+    col("order_purchase_timestamp") > last_watermark )
+incremental_count= incremental_df.count()
+print(incremental_count)
+
+
+if incremental_df.count() > 0:
+    new_watermark = (
+            incremental_df
+            .agg(
+                spark_max(
+                    "order_purchase_timestamp"
+                )
+            )
+            .collect()[0][0]
+    )
+    update_watermark(str(new_watermark))
+
 print(f"Old Watermark: {last_watermark}")
 print(f"New Watermark: {new_watermark}")
-update_watermark(str(new_watermark))
 
-if dedup_df.count() == 0:
-    print("No New recordsa are found ")
+new_watermark=last_watermark
+if incremental_df.count() == 0:
+    print("No New incremental records found ")
     spark.stop()
     exit()
 
-dedup_df.write \
+incremental_df.write \
   .mode("append") \
   .partitionBy(
       "order_status"
