@@ -20,7 +20,7 @@ try:
       .mode("overwrite") \
       .parquet("data/gold/order_status_summary")
     
-    logger.info(f"Order status summary completed")
+    logger.info(f"Order status summary completed ")
     order_status_summary.show()
 
 except Exception as e:

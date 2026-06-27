@@ -24,6 +24,7 @@ try:
 
     top_customer_df.write.mode("overwrite").parquet("data/gold/top_customers")
     top_customer_df.show(truncate=False)
+    logger.info(f"Top customer are : {top_customer_df.count()}")
 
 except Exception as e:
     logger.error(str(e))

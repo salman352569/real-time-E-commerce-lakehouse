@@ -4,9 +4,10 @@ from pyspark.sql.functions import col,current_timestamp,when ,lit
 from pyspark.sql.functions import row_number
 from spark.utils.watermark import get_watermark
 from pyspark.sql.functions import max as spark_max
-from spark.utils.watermark import update_watermark   
+from spark.utils.watermark import update_watermark 
+from spark.utils.logger import get_logger  
 
-
+logger= get_logger(__name__)
 
 spark = create_spark_session(
     "SilverOrders",
@@ -68,8 +69,11 @@ incremental_df= normal_order_df.filter(
 incremental_count= incremental_df.count()
 print(incremental_count)
 
+incremental_count = incremental_df.count()
 
-if incremental_df.count() > 0:
+
+if incremental_count > 0:
+    
     new_watermark = (
             incremental_df
             .agg(
@@ -81,14 +85,15 @@ if incremental_df.count() > 0:
     )
     update_watermark(str(new_watermark))
 
-print(f"Old Watermark: {last_watermark}")
-print(f"New Watermark: {new_watermark}")
+logger.info(f"Old Watermark: {last_watermark}")
+logger.info(f"New Watermark: {new_watermark}")
 
 new_watermark=last_watermark
-if incremental_df.count() == 0:
+if incremental_count == 0:
     print("No New incremental records found ")
     spark.stop()
-    exit()
+    exit(0)
+    
 
 incremental_df.write \
   .mode("append") \
@@ -98,6 +103,6 @@ incremental_df.write \
   .parquet(
       "data/silver/orders"
   )
-print(
-    f"Silver rows: {dedup_df.count()}"
+logger.info(
+    f"Loaded silver cleaned  data : {dedup_df.count()}"
 )
